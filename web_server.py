@@ -304,6 +304,11 @@ setInterval(refreshAll, 5000);
 </html>
 """
 
+try:
+    from web_page import PAGE as PAGE
+except Exception:
+    pass
+
 
 class ReusableThreadingHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
