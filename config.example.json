@@ -1,0 +1,67 @@
+{
+  "device": {
+    "device_id": "student-rk3506js-001",
+    "display_name": "学生001",
+    "platform": "ATK-DLRK3506JS",
+    "location": "classroom"
+  },
+  "mqtt": {
+    "host": "127.0.0.1",
+    "port": 1883,
+    "username": "",
+    "password": "",
+    "keepalive": 60,
+    "topics": {
+      "task": "teacher/tasks/student-rk3506js-001",
+      "status": "student/status/student-rk3506js-001",
+      "result": "student/results/student-rk3506js-001"
+    }
+  },
+  "bluetooth": {
+    "enabled": true,
+    "adapter": "hci0",
+    "name": "student-rk3506js-001",
+    "pin": "0000",
+    "discoverable": true,
+    "pairable": true,
+    "ble_uart_enabled": true,
+    "ble_uart_service_uuid": "6E400001-B5A3-F393-E0A9-E50E24DCCA9E",
+    "ble_uart_rx_uuid": "6E400002-B5A3-F393-E0A9-E50E24DCCA9E",
+    "ble_uart_tx_uuid": "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+  },
+  "storage": {
+    "data_dir": "/userdata/student",
+    "log_file": "/userdata/student/student.log",
+    "status_file": "/userdata/student/status.json",
+    "results_file": "/userdata/student/results.jsonl",
+    "last_record_file": "/userdata/student/last_record.wav",
+    "sample_audio": "/opt/student_linux/audio_samples/sample_8k_16bit_mono.wav"
+  },
+  "web": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8080,
+    "log_tail_lines": 120
+  },
+  "websocket": {
+    "funasr_url": "ws://117.72.242.62:10096",
+    "agent_url": "ws://117.72.172.141:8000/ws/chat",
+    "agent_user": "rk3506js",
+    "conversation_id": "",
+    "receive_timeout": 10,
+    "asr_final_timeout": 12,
+    "agent_timeout": 300
+  },
+  "audio": {
+    "record_device": "hw:0,0",
+    "play_device": "hw:0,0",
+    "record_seconds": 5,
+    "asr_sample_rate": 16000,
+    "tts_sample_rate": 24000,
+    "chunk_ms": 20,
+    "channels": 1,
+    "sample_format": "S16_LE",
+    "work_dir": "runtime",
+    "streaming": true
+  }
+}
