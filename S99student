@@ -87,6 +87,9 @@ stop_board_stream() {
         rm -f "$STREAM_PID_FILE"
     fi
     pkill -f "$APP_DIR/board_stream.py" 2>/dev/null || true
+    pkill -f "python3 board_stream.py" 2>/dev/null || true
+    pkill -f "/opt/python/bin/python3 board_stream.py" 2>/dev/null || true
+    pkill -f "board_stream.py" 2>/dev/null || true
 }
 
 stop_bluetooth_pairing_agent() {
@@ -108,6 +111,7 @@ case "$1" in
             exit 0
         fi
         log_boot_info
+        sh "$APP_DIR/audio_init.sh" >> "$LOG_FILE" 2>&1
         start_bluetooth_pairing_agent
         start_ble_uart
         start_board_stream

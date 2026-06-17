@@ -5,6 +5,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+BASE_DIR = Path(__file__).resolve().parent
+
 
 PAGE = """<!doctype html>
 <html lang="zh-CN">
@@ -69,6 +71,7 @@ PAGE = """<!doctype html>
           <button onclick="refreshAll()">刷新</button>
           <button onclick="runCommand('status')">status</button>
           <button onclick="runCommand('play_test')">play_test</button>
+          <button onclick="runCommand('tts_test')">tts_test</button>
           <button onclick="runCommand('record_test')">record_test</button>
           <button class="danger" onclick="confirmRestart()">restart</button>
           <button onclick="selfCheck()">一键自检</button>
@@ -475,6 +478,21 @@ def start_web_server(app) -> ThreadingHTTPServer:
                     result = app.handle_command(str(payload.get("command", "status")))
                 elif self.path == "/api/task":
                     result = app.process_task(payload)
+                elif self.path == "/api/config/save":
+                    cfg_path = Path(app.config.get("_config_path", str(BASE_DIR / "config.json")))
+                    with cfg_path.open("r", encoding="utf-8") as fp:
+                        current = json.load(fp)
+                    ws = current.setdefault("websocket", {})
+                    if payload.get("funasr_url"):
+                        ws["funasr_url"] = payload["funasr_url"]
+                    if payload.get("agent_url"):
+                        ws["agent_url"] = payload["agent_url"]
+                    if payload.get("agent_user"):
+                        ws["agent_user"] = payload["agent_user"]
+                    with cfg_path.open("w", encoding="utf-8") as fp:
+                        json.dump(current, fp, ensure_ascii=False, indent=2)
+                    app.config["websocket"].update(ws)
+                    result = {"status": "ok", "websocket": ws}
                 else:
                     self._send(404, b'{"error":"not_found"}')
                     return

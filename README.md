@@ -171,7 +171,7 @@ mosquitto_pub -h 127.0.0.1 -t teacher/tasks/student-rk3506js-001 -m '{"task_id":
 http://192.168.3.126:8080/
 ```
 
-页面可查看状态、最近日志，也可以触发 `status`、`play_test`、`record_test` 和发送测试任务 JSON。
+页面可查看状态、最近日志，也可以触发 `status`、`play_test`、`tts_test`、`record_test` 和发送测试任务 JSON。
 
 也可以直接用命令测试：
 
@@ -179,6 +179,7 @@ http://192.168.3.126:8080/
 curl http://127.0.0.1:8080/api/status
 curl http://127.0.0.1:8080/api/log
 curl -X POST http://127.0.0.1:8080/api/command -d '{"command":"play_test"}'
+curl -X POST http://127.0.0.1:8080/api/command -d '{"command":"tts_test"}'
 curl -X POST http://127.0.0.1:8080/api/command -d '{"command":"record_test"}'
 ```
 
@@ -189,9 +190,12 @@ curl -X POST http://127.0.0.1:8080/api/command -d '{"command":"record_test"}'
 ```text
 status
 play_test
+tts_test
 record_test
 restart
 ```
+
+`tts_test` 会请求一句 TTS，保存到 `/userdata/student/runtime/tts_test_agent_audio.wav`，再用 `aplay` 播放，适合排查 TTS 音频和流式播放问题。
 
 BLE UART（`ble_uart_dbus.py`）当前只独立应答 `status` 心跳/查询，不会触发完整的录音/识别/AI 任务流程。
 

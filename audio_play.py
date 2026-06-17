@@ -4,9 +4,12 @@ import subprocess
 from pathlib import Path
 from typing import Union
 
+from audio_power import ensure_speaker_power
+
 
 def play_audio(config: dict, audio_path: Union[str, Path]) -> None:
     audio_cfg = config["audio"]
+    ensure_speaker_power(config)
     path = Path(audio_path)
     cmd = [
         "aplay",

@@ -326,11 +326,6 @@ PAGE = """<!doctype html>
       <div class="brand"><div class="logo">S</div><span>学生端控制台</span></div>
       <nav class="nav">
         <button class="active"><span class="mark">⌂</span>首页</button>
-        <button><span class="mark">≋</span>任务管理</button>
-        <button><span class="mark">▣</span>音频管理</button>
-        <button><span class="mark">⌁</span>WebSocket</button>
-        <button><span class="mark">▤</span>日志中心</button>
-        <button><span class="mark">⚙</span>系统设置</button>
       </nav>
       <div class="side-user">
         <div class="avatar">rk</div>
@@ -354,7 +349,7 @@ PAGE = """<!doctype html>
             </div>
           </div>
           <div class="range">
-            <button>本周</button><button class="active">本月</button><button>本季度</button><button>今年</button>
+            <span class="status-pill" id="ble-pill"><span class="dot" id="ble-dot"></span><span id="ble-pill-text">BLE 检测中</span></span>
           </div>
         </section>
 
@@ -396,6 +391,7 @@ PAGE = """<!doctype html>
                 <button onclick="refreshAll()">刷新</button>
                 <button onclick="runCommand('status')">status</button>
                 <button onclick="runCommand('play_test')">play_test</button>
+                <button onclick="runCommand('tts_test')">tts_test</button>
                 <button onclick="runCommand('record_test')">record_test</button>
                 <button onclick="selfCheck()">一键自检</button>
                 <button class="danger" onclick="confirmRestart()">restart</button>
@@ -449,6 +445,20 @@ PAGE = """<!doctype html>
           </section>
         </div>
 
+        <section class="panel" style="margin-bottom:20px">
+          <div class="panel-head"><div class="panel-title">WebSocket 配置</div><button class="primary" onclick="saveWsConfig()">保存并生效</button></div>
+          <div class="panel-body">
+            <table>
+              <tbody>
+                <tr><th>ASR 地址</th><td><input id="cfg-funasr" style="width:100%" placeholder="ws://..."></td></tr>
+                <tr><th>Agent 地址</th><td><input id="cfg-agent" style="width:100%" placeholder="ws://..."></td></tr>
+                <tr><th>Agent 用户</th><td><input id="cfg-agent-user" style="width:100%"></td></tr>
+              </tbody>
+            </table>
+            <pre id="cfg-result" style="margin-top:12px"></pre>
+          </div>
+        </section>
+
         <section class="panel">
           <div class="panel-head">
             <div class="panel-title">日志</div>
@@ -493,8 +503,26 @@ async function loadHealth() {
   document.getElementById('m-memory-sub').textContent = `used ${data.memory?.used || '--'} / total ${data.memory?.total || '--'}`;
   document.getElementById('m-disk').textContent = data.disk?.available || '--';
   document.getElementById('m-disk-sub').textContent = `${data.disk?.mount || '/userdata'} used ${data.disk?.used || '--'} / ${data.disk?.size || '--'}`;
-  document.getElementById('m-ble').textContent = data.bluetooth?.ble_uuid ? 'BLE on' : 'unknown';
+  const bleOn = !!data.bluetooth?.ble_uuid;
+  const bleConnected = data.bluetooth?.connected && data.bluetooth.connected.trim().length > 0;
+  document.getElementById('m-ble').textContent = bleConnected ? '已连接' : (bleOn ? 'BLE 广播中' : '未知');
   document.getElementById('m-ble-sub').textContent = data.bluetooth?.connected || data.bluetooth?.alias || '';
+  const pill = document.getElementById('ble-pill');
+  const dot = document.getElementById('ble-dot');
+  const pillText = document.getElementById('ble-pill-text');
+  if (bleConnected) {
+    pill.style.background = '#edf9f3'; pill.style.color = 'var(--green)';
+    dot.style.background = 'var(--green)';
+    pillText.textContent = 'BLE 已连接：' + data.bluetooth.connected.split('\\n')[0].trim();
+  } else if (bleOn) {
+    pill.style.background = '#eef5ff'; pill.style.color = 'var(--blue)';
+    dot.style.background = 'var(--blue)';
+    pillText.textContent = 'BLE 广播中，等待连接';
+  } else {
+    pill.style.background = '#fff6eb'; pill.style.color = 'var(--orange)';
+    dot.style.background = 'var(--orange)';
+    pillText.textContent = 'BLE 状态未知';
+  }
   document.getElementById('hero-ip').textContent = data.ip ? `wlan0 ${data.ip}` : '未读取到 wlan0 地址';
 
   const memPct = percentFromValues(data.memory?.used, data.memory?.total);
@@ -555,7 +583,23 @@ async function selfCheck() {
 }
 async function loadConfig() {
   const r = await fetch('/api/config');
-  document.getElementById('config').textContent = JSON.stringify(await r.json(), null, 2);
+  const data = await r.json();
+  document.getElementById('config').textContent = JSON.stringify(data, null, 2);
+  if (data.websocket) {
+    document.getElementById('cfg-funasr').value = data.websocket.funasr_url || '';
+    document.getElementById('cfg-agent').value = data.websocket.agent_url || '';
+    document.getElementById('cfg-agent-user').value = data.websocket.agent_user || '';
+  }
+}
+async function saveWsConfig() {
+  const payload = {
+    funasr_url: document.getElementById('cfg-funasr').value.trim(),
+    agent_url: document.getElementById('cfg-agent').value.trim(),
+    agent_user: document.getElementById('cfg-agent-user').value.trim(),
+  };
+  const r = await fetch('/api/config/save', {method:'POST', body: JSON.stringify(payload)});
+  const result = await r.json();
+  document.getElementById('cfg-result').textContent = JSON.stringify(result, null, 2);
 }
 async function loadRecord() {
   const r = await fetch('/api/record');

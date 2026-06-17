@@ -77,6 +77,12 @@ def _merge_asr_text(current: str, incoming: str) -> str:
     return current + incoming
 
 
+class AgentResponseError(RuntimeError):
+    def __init__(self, message: str, partial_text: str = ""):
+        super().__init__(message)
+        self.partial_text = partial_text
+
+
 class WsClient:
     def __init__(self, config: dict):
         self.config = config
@@ -142,20 +148,28 @@ class WsClient:
         finally:
             ws.close()
 
-    def stream_asr_from_arecord(self, record_seconds: int) -> str:
+    def stream_asr_from_arecord(self, record_seconds: int, silence_timeout: float = 5.0) -> str:
+        """流式录音发送 FunASR，silence_timeout 秒内无 ASR 返回则停止录音。
+        record_seconds 作为最长录音时间上限。"""
         audio_cfg = self.config["audio"]
         sample_rate = int(audio_cfg.get("asr_sample_rate", 16000))
         chunk_ms = int(audio_cfg.get("chunk_ms", 20))
         chunk_bytes = max(1, sample_rate * chunk_ms // 1000) * 2 * int(audio_cfg.get("channels", 1))
+        silence_timeout = float(self.ws_cfg.get("asr_silence_timeout", silence_timeout))
         ws = websocket.create_connection(self.ws_cfg["funasr_url"], timeout=10)
         ws.settimeout(0.05)
         proc = start_arecord_pcm(self.config)
         final_text = ""
         online_text = ""
         start_at = time.time()
+        last_result_at = None  # None 表示还没收到第一条结果
         try:
             ws.send(funasr_start_payload(sample_rate, self.device_id))
             while time.time() - start_at < record_seconds:
+                # 收到第一条结果后，才开始检测静音超时
+                if last_result_at is not None and time.time() - last_result_at > silence_timeout:
+                    print(f"ASR silence timeout ({silence_timeout}s) after speech, stopping recording", flush=True)
+                    break
                 if proc.stdout is None:
                     break
                 chunk = proc.stdout.read(chunk_bytes)
@@ -173,11 +187,17 @@ class WsClient:
                             mode = obj.get("mode") or ""
                             if text and mode == "2pass-online":
                                 online_text = text
+                                last_result_at = time.time()
                                 print(f"ASR online: {text}", flush=True)
                             elif text and (mode == "2pass-offline" or obj.get("is_final") is True):
                                 final_text = _merge_asr_text(final_text, text)
+                                last_result_at = time.time()
                                 print(f"ASR offline: {final_text}", flush=True)
             ws.send(funasr_finish_payload(sample_rate, self.device_id))
+            # 录音阶段已经收到过 offline 结果，直接返回
+            if final_text:
+                return final_text
+            # 没有收到过 offline，等服务端处理完最后一段
             deadline = time.time() + float(self.ws_cfg.get("asr_final_timeout", 12))
             ws.settimeout(0.5)
             while time.time() < deadline:
@@ -248,10 +268,20 @@ class WsClient:
                             self.ws_cfg["conversation_id"] = conv_id
                         return "".join(text_parts), b"".join(audio_parts) if audio_parts else None
                     elif msg_type == "error":
-                        raise RuntimeError(obj.get("message") or "chatAgent error")
+                        raise AgentResponseError(obj.get("message") or "chatAgent error", "".join(text_parts))
                 if consumed_any:
                     buffer = ""
+            partial_text = "".join(text_parts)
+            if partial_text:
+                raise AgentResponseError("chatAgent response timeout", partial_text)
             raise TimeoutError("chatAgent response timeout")
+        except AgentResponseError:
+            raise
+        except Exception as exc:
+            partial_text = "".join(text_parts)
+            if partial_text:
+                raise AgentResponseError(str(exc), partial_text) from exc
+            raise
         finally:
             ws.close()
 
@@ -344,8 +374,18 @@ class WsClient:
                                 self.ws_cfg["conversation_id"] = conv_id
                             return "".join(text_parts)
                         elif msg_type == "error":
-                            raise RuntimeError(obj.get("message") or "chatAgent error")
+                            raise AgentResponseError(obj.get("message") or "chatAgent error", "".join(text_parts))
+            partial_text = "".join(text_parts)
+            if partial_text:
+                raise AgentResponseError("chatAgent response timeout", partial_text)
             raise TimeoutError("chatAgent response timeout")
+        except AgentResponseError:
+            raise
+        except Exception as exc:
+            partial_text = "".join(text_parts)
+            if partial_text:
+                raise AgentResponseError(str(exc), partial_text) from exc
+            raise
         finally:
             ws.close()
             if player is not None:
@@ -404,20 +444,16 @@ class WsClient:
         b64_chars = re.sub(r"\\/", "/", text[:end])
         b64_chars = "".join(b64_chars.split())
         data = tail + b64_chars
-        decode_len = (len(data) // 4) * 4
-        if close_quote:
-            decode_len = len(data)
-        if decode_len > 0:
-            chunk = data[:decode_len]
+        if close_quote and data:
             try:
-                pcm = base64.b64decode(chunk)
+                pcm = base64.b64decode(data)
             except Exception:
                 pcm = b""
             if pcm:
                 if player is None:
                     player = AplayPcmStream(self.config)
                 player.write(pcm)
-        new_tail = data[decode_len:]
+        new_tail = "" if close_quote else data
         offset = end + 1 if close_quote else end
         if close_quote:
             brace = text.find("}", offset)

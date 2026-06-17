@@ -15,7 +15,7 @@ from audio_record import record_wav
 from device_state import DeviceState
 from display import show_error, show_result, show_status, show_task
 from mqtt_client import StudentMqttClient
-from ws_client import WsClient
+from ws_client import AgentResponseError, WsClient
 from web_server import start_web_server
 
 
@@ -107,9 +107,12 @@ class StudentApp:
     def write_status(self, payload: dict) -> None:
         self.status_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    def append_result(self, payload: dict) -> None:
+    def append_result(self, payload: dict, keep: int = 100) -> None:
         with self.results_file.open("a", encoding="utf-8") as fp:
             fp.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        lines = self.results_file.read_text(encoding="utf-8").splitlines()
+        if len(lines) > keep:
+            self.results_file.write_text("\n".join(lines[-keep:]) + "\n", encoding="utf-8")
 
     def current_status(self) -> dict:
         payload = self.state.to_status_payload()
@@ -142,6 +145,26 @@ class StudentApp:
             record_wav(test_config, self.last_record_file)
             self.publish_status("idle", "record_test done")
             return {"type": "command_result", "command": cmd, "status": "ok", "file": str(self.last_record_file)}
+        if cmd == "tts_test":
+            work_dir = runtime_dir(self.config)
+            self.publish_status("testing", "requesting tts_test audio")
+            ai_text, audio_bytes = self.ws.ask_agent("你好，请简单回复一句话")
+            if not audio_bytes:
+                raise RuntimeError("tts_test returned no audio")
+            suffix = ".wav" if audio_bytes.startswith(b"RIFF") else ".pcm"
+            audio_path = work_dir / f"tts_test_agent_audio{suffix}"
+            audio_path.write_bytes(audio_bytes)
+            self.publish_status("testing", f"playing {audio_path.name}")
+            play_audio(self.config, audio_path)
+            self.publish_status("idle", "tts_test done")
+            return {
+                "type": "command_result",
+                "command": cmd,
+                "status": "ok",
+                "file": str(audio_path),
+                "ai_text": ai_text,
+                "bytes": len(audio_bytes),
+            }
         if cmd == "restart":
             self.publish_status("restarting", "restart requested")
             threading.Timer(0.3, lambda: os._exit(0)).start()
@@ -182,13 +205,18 @@ class StudentApp:
         if not asr_text:
             raise RuntimeError("ASR returned empty text")
 
+        self.state.set_result(asr_text=asr_text, ai_text="")
         self.publish_status("thinking", asr_text)
-        if self.file_mode or not task_config["audio"].get("streaming", True):
-            ai_text, audio_bytes = self.ws.ask_agent(asr_text)
-        else:
-            self.publish_status("speaking", "streaming agent audio")
-            ai_text = self.ws.ask_agent_streaming(asr_text)
-            audio_bytes = None
+        try:
+            if self.file_mode or not task_config["audio"].get("streaming", True):
+                ai_text, audio_bytes = self.ws.ask_agent(asr_text)
+            else:
+                self.publish_status("speaking", "streaming agent audio")
+                ai_text = self.ws.ask_agent_streaming(asr_text)
+                audio_bytes = None
+        except AgentResponseError as exc:
+            self.state.set_result(asr_text=asr_text, ai_text=exc.partial_text)
+            raise RuntimeError(f"{exc}; partial AI text saved") from exc
         self.state.set_result(asr_text=asr_text, ai_text=ai_text)
 
         if audio_bytes:
@@ -249,7 +277,7 @@ class StudentApp:
         return thread
 
     def run_ble_task_poller(self) -> None:
-        offset = 0
+        offset = self.ble_task_file.stat().st_size if self.ble_task_file.exists() else 0
         while True:
             try:
                 if self.ble_task_file.exists():
@@ -304,6 +332,7 @@ def main() -> int:
         return run_env_check()
 
     config = load_config(Path(args.config))
+    config["_config_path"] = str(Path(args.config).resolve())
     if args.check_ws:
         client = WsClient(config)
         if args.check_ws in ("funasr", "both"):

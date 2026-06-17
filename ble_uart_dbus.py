@@ -18,7 +18,10 @@ from bluetooth_protocol import (
     NUS_SERVICE_UUID,
     NUS_TX_UUID,
     append_ble_rx,
+    append_ble_task,
     hex_bytes,
+    json_line,
+    parse_incoming_bytes,
 )
 
 
@@ -185,8 +188,11 @@ async def main() -> int:
 
     def on_rx(data: bytes) -> None:
         text = data.decode("utf-8", errors="replace").strip()
+        message = parse_incoming_bytes(data)
         append_ble_rx(text)
-        tx.notify(data)
+        if message:
+            append_ble_task(message)
+        tx.notify(json_line({"type": "ack", "received": message or text}))
 
     service = GattService()
     rx = GattCharacteristic(NUS_RX_UUID, RX_PATH, ["write", "write-without-response"], on_write=on_rx)
