@@ -6,6 +6,7 @@ LOG_FILE=$DATA_DIR/student.log
 PID_FILE=/var/run/student.pid
 BLE_PID_FILE=/var/run/student_ble.pid
 BT_AGENT_PID_FILE=/var/run/student_bt_agent.pid
+STREAM_PID_FILE=/var/run/student_stream.pid
 START_DELAY=${START_DELAY:-5}
 RESTART_DELAY=${RESTART_DELAY:-3}
 
@@ -65,6 +66,29 @@ stop_ble_uart() {
     pkill bluetoothctl 2>/dev/null || true
 }
 
+start_board_stream() {
+    if [ -f "$STREAM_PID_FILE" ] && kill -0 "$(cat "$STREAM_PID_FILE")" 2>/dev/null; then
+        echo "board_stream is already running"
+        return
+    fi
+    (
+        cd "$APP_DIR" || exit 1
+        while true; do
+            python3 board_stream.py
+            sleep 2
+        done
+    ) >> "$LOG_FILE" 2>&1 &
+    echo $! > "$STREAM_PID_FILE"
+}
+
+stop_board_stream() {
+    if [ -f "$STREAM_PID_FILE" ]; then
+        kill "$(cat "$STREAM_PID_FILE")" 2>/dev/null || true
+        rm -f "$STREAM_PID_FILE"
+    fi
+    pkill -f "$APP_DIR/board_stream.py" 2>/dev/null || true
+}
+
 stop_bluetooth_pairing_agent() {
     if [ -f "$BT_AGENT_PID_FILE" ]; then
         kill "$(cat "$BT_AGENT_PID_FILE")" 2>/dev/null || true
@@ -86,6 +110,7 @@ case "$1" in
         log_boot_info
         start_bluetooth_pairing_agent
         start_ble_uart
+        start_board_stream
         (
             sleep "$START_DELAY"
             cd "$APP_DIR" || exit 1
@@ -107,6 +132,7 @@ case "$1" in
         fi
         stop_bluetooth_pairing_agent
         stop_ble_uart
+        stop_board_stream
         pkill -f "python3 main.py" 2>/dev/null || true
         pkill -f "/opt/python/bin/python3 main.py" 2>/dev/null || true
         pkill -f "$APP_DIR/main.py" 2>/dev/null || true

@@ -30,6 +30,7 @@
 - `S99student`：Buildroot/BusyBox init 开机自启脚本。
 - `PORTING_PLAN.md`：ESP32-S3 到 Linux 的替换关系。
 - `BLUETOOTH_PROTOCOL.md`：蓝牙收发协议说明。
+- `SSH_RECEIVER.md`：通过 SSH 向板子下发命令和任务的说明。
 
 ## RK3506JS 环境检查命令
 
